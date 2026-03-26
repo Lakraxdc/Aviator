@@ -3,51 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Hourly Tracker</title>
+    <title>Aviator 60-Min Data Hub</title>
     <style>
-        body { background: #050505; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 15px; }
+        body { background: #050505; color: #eee; font-family: sans-serif; margin: 0; padding: 15px; }
         .container { max-width: 450px; margin: auto; }
-        .header { text-align: center; padding: 10px; border: 1px solid #333; border-radius: 8px; margin-bottom: 20px; background: #111; }
-        
-        /* Hourly Blocks */
-        .hour-block { border: 1px solid #222; border-radius: 10px; margin-bottom: 15px; background: #0a0a0a; overflow: hidden; }
-        .hour-title { background: #1a1a1a; padding: 8px 15px; font-size: 13px; color: #888; border-bottom: 1px solid #222; font-weight: bold; }
-        
-        /* Row Styles & Your Custom Colors */
-        .row { display: flex; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid #151515; font-weight: bold; font-size: 17px; }
-        .row:last-child { border-bottom: none; }
-        
-        .skyblue { color: #00d4ff; } /* 1.00x - 1.99x */
-        .purple { color: #a020f0; }  /* 2.00x - 9.99x */
-        .pink { color: #ff00ff; text-shadow: 0 0 8px #ff00ff; } /* 10.00x+ */
-        
+        .header { text-align: center; padding: 15px; border: 1px solid #333; border-radius: 10px; margin-bottom: 20px; background: #111; }
+        .hour-block { border: 1px solid #222; border-radius: 10px; margin-bottom: 20px; background: #0a0a0a; overflow: hidden; }
+        .hour-header { background: #1a1a1a; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #222; }
+        .btn-download { background: #00d4ff; color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; }
+        .row { display: flex; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid #151515; font-weight: bold; font-size: 16px; }
+        .skyblue { color: #00d4ff; } .purple { color: #a020f0; } .pink { color: #ff00ff; text-shadow: 0 0 8px #ff00ff; }
         .status { font-size: 10px; color: #444; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div style="font-size: 18px; font-weight: bold;">LIVE SIGNAL FEED</div>
-            <div style="font-size: 11px; color: #666;">ID: 13638485 | STABLE STREAM</div>
+            <div style="font-size: 18px; font-weight: bold;">HOURLY ARCHIVE</div>
+            <div style="font-size: 11px; color: #00d4ff;">LIVE TRACKING ID: 13638485</div>
         </div>
-        
         <div id="logs"></div>
-        <div class="status" id="sync">CONNECTING...</div>
+        <div class="status" id="sync">ESTABLISHING DATA STREAM...</div>
     </div>
 
     <script>
         const logsDiv = document.getElementById('logs');
         let lastId = null;
-        let activeHour = null;
+        let hourStorage = {}; // Holds the full hour strings for CSV
 
-        async function fetchGame() {
+        async function startTracking() {
             try {
-                // Using the Public Stable API (No Token Needed)
-                const target = 'https://smartigaming.app/api/cdp/streamer/giveaway.json?origin=https%3A%2F%2F1wacxb.com';
-                const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}&timestamp=${Date.now()}`;
-                
-                const response = await fetch(proxy);
-                const json = await response.json();
+                // Stable Public API to avoid Token Expiry
+                const api = 'https://smartigaming.app/api/cdp/streamer/giveaway.json?origin=https%3A%2F%2F1wacxb.com';
+                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(api)}&cache=${Date.now()}`);
+                const json = await res.json();
                 const data = JSON.parse(json.contents);
                 
                 const ids = Object.keys(data);
@@ -56,43 +45,62 @@
 
                 if (latestId !== lastId) {
                     lastId = latestId;
-                    const val = parseFloat(round.f || round.multiplier).toFixed(2);
-                    const now = new Date();
                     
-                    // Create Hour Frame (e.g., 15:00 - 16:00)
-                    const h = now.getHours();
-                    const hourLabel = `${h}:00 - ${h+1}:00`;
-                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    // Logic to extract multiplier correctly (Fixes NaNx)
+                    let rawVal = round.f || round.multiplier || 0;
+                    const val = parseFloat(rawVal).toFixed(2);
+                    if (val <= 0) return;
 
-                    // Handle New Hour Block
-                    if (activeHour !== hourLabel) {
-                        activeHour = hourLabel;
+                    const now = new Date();
+                    const h = now.getHours();
+                    const dateStr = now.toLocaleDateString();
+                    const timeStr = now.toLocaleTimeString([], { hour12: false });
+                    const hourID = `hour-${h}-${dateStr.replace(/\//g, '-')}`;
+
+                    // Create Hour Section if new
+                    if (!document.getElementById(hourID)) {
+                        hourStorage[hourID] = "Date,Time,Multiplier\n"; // CSV Header
                         const block = document.createElement('div');
                         block.className = 'hour-block';
-                        block.id = `h-${h}`;
-                        block.innerHTML = `<div class="hour-title">${hourLabel} (${now.toLocaleDateString()})</div><div class="rows"></div>`;
+                        block.id = hourID;
+                        block.innerHTML = `
+                            <div class="hour-header">
+                                <span style="font-size:12px; color:#888;">${h}:00 - ${h+1}:00</span>
+                                <button class="btn-download" onclick="exportCSV('${hourID}')">DOWNLOAD FULL HOUR</button>
+                            </div>
+                            <div class="rows"></div>`;
                         logsDiv.insertBefore(block, logsDiv.firstChild);
                     }
 
-                    // Apply Custom Color Logic
-                    let colorClass = val < 2 ? 'skyblue' : (val < 10 ? 'purple' : 'pink');
-                    
+                    // Add to CSV Storage
+                    hourStorage[hourID] += `${dateStr},${timeStr},${val}x\n`;
+
+                    // Visual Update
+                    let clr = val < 2 ? 'skyblue' : (val < 10 ? 'purple' : 'pink');
                     const row = document.createElement('div');
-                    row.className = `row ${colorClass}`;
+                    row.className = `row ${clr}`;
                     row.innerHTML = `<span>${timeStr}</span><span>${val}x</span>`;
                     
-                    const rowContainer = document.getElementById(`h-${h}`).querySelector('.rows');
+                    const rowContainer = document.getElementById(hourID).querySelector('.rows');
                     rowContainer.insertBefore(row, rowContainer.firstChild);
-                    
-                    document.getElementById('sync').innerText = "LAST SYNC: " + timeStr;
+                    document.getElementById('sync').innerText = "DATA OK: " + timeStr;
                 }
             } catch (e) {
-                document.getElementById('sync').innerText = "RE-SYNCING WITH SPRIBE...";
+                document.getElementById('sync').innerText = "RE-SYNCING WITH SERVER...";
             }
         }
 
-        setInterval(fetchGame, 3000);
-        fetchGame();
+        function exportCSV(id) {
+            const blob = new Blob([hourStorage[id]], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Aviator_${id}.csv`;
+            a.click();
+        }
+
+        setInterval(startTracking, 3000);
+        startTracking();
     </script>
 </body>
 </html>

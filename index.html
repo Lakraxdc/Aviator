@@ -3,75 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aviator Live - Local Feed</title>
+    <title>Aviator Hourly Tracker</title>
     <style>
-        body { background: #0a0a0c; color: #00ff66; font-family: 'Courier New', monospace; padding: 20px; }
-        .dashboard { max-width: 400px; margin: auto; border: 1px solid #333; padding: 15px; border-radius: 12px; background: #111; box-shadow: 0 0 20px #f03; }
-        .header { text-align: center; border-bottom: 1px solid #222; padding-bottom: 10px; margin-bottom: 15px; }
-        .row { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #1a1a1a; font-size: 18px; }
-        .red { color: #ff4d4d; }
-        .pink { color: #ff00ff; font-weight: bold; text-shadow: 0 0 10px #ff00ff; }
-        .info { font-size: 10px; color: #666; word-break: break-all; margin-top: 10px; }
+        body { background: #050505; color: #eee; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 15px; }
+        .container { max-width: 450px; margin: auto; }
+        .header { text-align: center; padding: 10px; border: 1px solid #333; border-radius: 8px; margin-bottom: 20px; background: #111; }
+        
+        /* Hourly Blocks */
+        .hour-block { border: 1px solid #222; border-radius: 10px; margin-bottom: 15px; background: #0a0a0a; overflow: hidden; }
+        .hour-title { background: #1a1a1a; padding: 8px 15px; font-size: 13px; color: #888; border-bottom: 1px solid #222; font-weight: bold; }
+        
+        /* Row Styles & Your Custom Colors */
+        .row { display: flex; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid #151515; font-weight: bold; font-size: 17px; }
+        .row:last-child { border-bottom: none; }
+        
+        .skyblue { color: #00d4ff; } /* 1.00x - 1.99x */
+        .purple { color: #a020f0; }  /* 2.00x - 9.99x */
+        .pink { color: #ff00ff; text-shadow: 0 0 8px #ff00ff; } /* 10.00x+ */
+        
+        .status { font-size: 10px; color: #444; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
-
-<div class="dashboard">
-    <div class="header">
-        <div style="font-weight: bold; color: #fff;">LIVE SPRIBE MONITOR</div>
-        <div style="font-size: 11px; color: #888;">User: 13638485 | Token: Active</div>
+    <div class="container">
+        <div class="header">
+            <div style="font-size: 18px; font-weight: bold;">LIVE SIGNAL FEED</div>
+            <div style="font-size: 11px; color: #666;">ID: 13638485 | STABLE STREAM</div>
+        </div>
+        
+        <div id="logs"></div>
+        <div class="status" id="sync">CONNECTING...</div>
     </div>
-    
-    <div id="log">Waiting for round...</div>
-    
-    <div class="info">
-        <b>Session Token:</b><br>
-        32f1776d-b9ae-46d6-b511-f49d818f21e1
-    </div>
-</div>
 
-<script>
-    const logDiv = document.getElementById('log');
-    let lastId = null;
+    <script>
+        const logsDiv = document.getElementById('logs');
+        let lastId = null;
+        let activeHour = null;
 
-    async function syncData() {
-        try {
-            // Fetching from the public streamer giveaway endpoint
-            const response = await fetch('https://smartigaming.app/api/cdp/streamer/giveaway.json?origin=https%3A%2F%2F1wacxb.com');
-            const data = await response.json();
-            
-            const ids = Object.keys(data);
-            const latestId = ids[ids.length - 1];
-            const round = data[latestId];
-
-            if (latestId !== lastId) {
-                lastId = latestId;
-                const val = parseFloat(round.f || round.multiplier).toFixed(2);
+        async function fetchGame() {
+            try {
+                // Using the Public Stable API (No Token Needed)
+                const target = 'https://smartigaming.app/api/cdp/streamer/giveaway.json?origin=https%3A%2F%2F1wacxb.com';
+                const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}&timestamp=${Date.now()}`;
                 
-                // Color Coding
-                let type = "";
-                if (val < 2.00) type = "red";
-                if (val >= 10.00) type = "pink";
+                const response = await fetch(proxy);
+                const json = await response.json();
+                const data = JSON.parse(json.contents);
+                
+                const ids = Object.keys(data);
+                const latestId = ids[ids.length - 1];
+                const round = data[latestId];
 
-                const entry = document.createElement('div');
-                entry.className = `row ${type}`;
-                entry.innerHTML = `<span>[${new Date().toLocaleTimeString().split(' ')[0]}]</span> <b>${val}x</b>`;
-                
-                if (logDiv.innerText.includes("Waiting")) logDiv.innerHTML = "";
-                logDiv.insertBefore(entry, logDiv.firstChild);
-                
-                // Keep only last 10 rounds
-                if (logDiv.children.length > 10) logDiv.lastChild.remove();
+                if (latestId !== lastId) {
+                    lastId = latestId;
+                    const val = parseFloat(round.f || round.multiplier).toFixed(2);
+                    const now = new Date();
+                    
+                    // Create Hour Frame (e.g., 15:00 - 16:00)
+                    const h = now.getHours();
+                    const hourLabel = `${h}:00 - ${h+1}:00`;
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+                    // Handle New Hour Block
+                    if (activeHour !== hourLabel) {
+                        activeHour = hourLabel;
+                        const block = document.createElement('div');
+                        block.className = 'hour-block';
+                        block.id = `h-${h}`;
+                        block.innerHTML = `<div class="hour-title">${hourLabel} (${now.toLocaleDateString()})</div><div class="rows"></div>`;
+                        logsDiv.insertBefore(block, logsDiv.firstChild);
+                    }
+
+                    // Apply Custom Color Logic
+                    let colorClass = val < 2 ? 'skyblue' : (val < 10 ? 'purple' : 'pink');
+                    
+                    const row = document.createElement('div');
+                    row.className = `row ${colorClass}`;
+                    row.innerHTML = `<span>${timeStr}</span><span>${val}x</span>`;
+                    
+                    const rowContainer = document.getElementById(`h-${h}`).querySelector('.rows');
+                    rowContainer.insertBefore(row, rowContainer.firstChild);
+                    
+                    document.getElementById('sync').innerText = "LAST SYNC: " + timeStr;
+                }
+            } catch (e) {
+                document.getElementById('sync').innerText = "RE-SYNCING WITH SPRIBE...";
             }
-        } catch (err) {
-            console.log("Connection lost, retrying...");
         }
-    }
 
-    // Check every 2.5 seconds
-    setInterval(syncData, 2500);
-    syncData();
-</script>
-
+        setInterval(fetchGame, 3000);
+        fetchGame();
+    </script>
 </body>
 </html>
